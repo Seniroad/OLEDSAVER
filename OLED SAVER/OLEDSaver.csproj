@@ -13,6 +13,11 @@
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 	</PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<Optimize>true</Optimize>
+		<PublishReadyToRun>true</PublishReadyToRun>
+		<PublishTrimmed>false</PublishTrimmed>
+	</PropertyGroup>
 	<ItemGroup>
 		<EmbeddedResource Include="OLED SAVER.ico">
 			<LogicalName>OLEDSaver.Resources.OledSaverIcon</LogicalName>
