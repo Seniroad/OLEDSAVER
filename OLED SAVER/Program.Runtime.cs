@@ -665,6 +665,13 @@ namespace OLEDSaver
 
         private static double GetIdleTimeSeconds()
         {
+            double systemIdleSeconds = GetSystemIdleTimeSeconds();
+            double controllerIdleSeconds = GetControllerIdleTimeSeconds();
+            return Math.Min(systemIdleSeconds, controllerIdleSeconds);
+        }
+
+        private static double GetSystemIdleTimeSeconds()
+        {
             LASTINPUTINFO info = new LASTINPUTINFO();
             info.cbSize = (uint)Marshal.SizeOf(info);
             if (GetLastInputInfo(ref info))
@@ -713,6 +720,7 @@ namespace OLEDSaver
             SaveSettings();
             StopDesktopMonitoring();
             StopTaskbarEdgeHook();
+            StopControllerActivityTracking();
             _edgeTimer?.Stop();
             _edgeTimer?.Dispose();
             _edgeTimer = null;

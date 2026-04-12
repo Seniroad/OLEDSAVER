@@ -19,6 +19,7 @@ namespace OLEDSaver
 
             InitializeMonitorSettings();
             LoadSettings();
+            SetupControllerActivityTracking();
             if (_desktopIconsHidingEnabled)
             {
                 StartDesktopMonitoring();
