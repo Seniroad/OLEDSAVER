@@ -140,7 +140,7 @@ namespace OLEDSaver
 
             if (_screenOff && idleSeconds < 1.0)
             {
-                _screenOff = false;
+                TurnOnDisplay();
             }
 
             _isVideoPlaying = ShouldEvaluateVideoState(idleSeconds) && IsVideoPlaying();
