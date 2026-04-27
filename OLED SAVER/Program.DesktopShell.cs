@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
@@ -12,7 +11,7 @@ namespace OLEDSaver
 {
     static partial class Program
     {
-        private static readonly List<IntPtr> _extraTaskbarWindows = new List<IntPtr>();
+        private static readonly CachedWindowHandles _extraTaskbarWindows = new CachedWindowHandles();
 
         private static void CheckDesktopInteraction()
         {
@@ -67,8 +66,18 @@ namespace OLEDSaver
 
         private static void HideStartButtonsWithStartAllBack()
         {
-            _extraTaskbarWindows.Clear();
-            Rectangle primaryBounds = Screen.PrimaryScreen.Bounds;
+            if (_extraTaskbarWindows.TryGetValid(IsWindow, out var cachedHandles))
+            {
+                foreach (var hWnd in cachedHandles)
+                {
+                    ShowWindow(hWnd, SW_HIDE);
+                }
+
+                return;
+            }
+
+            var discoveredWindows = new List<IntPtr>();
+            Rectangle primaryBounds = GetPrimaryScreen().Bounds;
 
             EnumWindows((hWnd, lParam) =>
             {
@@ -93,36 +102,29 @@ namespace OLEDSaver
 
                 uint pid;
                 GetWindowThreadProcessId(hWnd, out pid);
-                string processName;
-                try
-                {
-                    using (var p = Process.GetProcessById((int)pid))
-                    {
-                        processName = p.ProcessName.ToLower();
-                    }
-                }
-                catch
-                {
-                    return true;
-                }
 
-                if (processName != "explorer")
+                if (!string.Equals(GetProcessName(pid), "explorer", StringComparison.OrdinalIgnoreCase))
                     return true;
 
-                _extraTaskbarWindows.Add(hWnd);
+                discoveredWindows.Add(hWnd);
                 ShowWindow(hWnd, SW_HIDE);
                 return true;
             }, IntPtr.Zero);
+
+            _extraTaskbarWindows.Replace(discoveredWindows);
         }
 
         private static void ShowStartButtonsWithStartAllBack()
         {
-            foreach (var hWnd in _extraTaskbarWindows.ToList())
+            if (!_extraTaskbarWindows.TryGetValid(IsWindow, out var cachedHandles))
             {
-                if (IsWindow(hWnd))
-                    ShowWindow(hWnd, SW_SHOW);
+                return;
             }
-            _extraTaskbarWindows.Clear();
+
+            foreach (var hWnd in cachedHandles)
+            {
+                ShowWindow(hWnd, SW_SHOW);
+            }
         }
 
         private static void HideTaskbarAndDesktop()
@@ -325,6 +327,8 @@ namespace OLEDSaver
         private static void StopDesktopMonitoring()
         {
             _desktopIconRefreshTimer?.Stop();
+            _desktopIconRefreshTimer?.Dispose();
+            _desktopIconRefreshTimer = null;
 
             if (_hookHandle != IntPtr.Zero)
             {

@@ -12,10 +12,15 @@
 		<SelfContained>false</SelfContained>
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<ServerGarbageCollection>false</ServerGarbageCollection>
+		<TieredCompilation>true</TieredCompilation>
 	</PropertyGroup>
 	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
 		<Optimize>true</Optimize>
-		<PublishReadyToRun>true</PublishReadyToRun>
+		<DebugSymbols>false</DebugSymbols>
+		<DebugType>none</DebugType>
+		<TieredPGO>true</TieredPGO>
+		<PublishReadyToRun>false</PublishReadyToRun>
 		<PublishTrimmed>false</PublishTrimmed>
 	</PropertyGroup>
 	<ItemGroup>

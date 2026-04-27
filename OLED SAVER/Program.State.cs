@@ -22,9 +22,7 @@ namespace OLEDSaver
         private const uint GA_ROOT = 2;
         private const uint THREAD_SET_INFORMATION = 0x0020;
         private const uint THREAD_QUERY_INFORMATION = 0x0040;
-        private const int WH_MOUSE_LL = 14;
         private const int THREAD_PRIORITY_IDLE = -15;
-        private const int WM_MOUSEMOVE = 0x0200;
         private const int WM_SYSCOMMAND = 0x0112;
         private const int SC_MONITORPOWER = 0xF170;
         private const int SM_CXSCREEN = 0;
@@ -35,14 +33,13 @@ namespace OLEDSaver
         private const int SPI_SETWORKAREA = 0x002F;
         private const int ENUM_CURRENT_SETTINGS = -1;
         private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-        private const int ActiveEdgePollingIntervalMs = 100;
-        private const int IdleEdgePollingIntervalMs = 200;
+        private const int ActiveEdgePollingIntervalMs = 250;
+        private const int IdleEdgePollingIntervalMs = 250;
         private const int DisabledEdgePollingIntervalMs = 1000;
         private const int DefaultInactivityPollingIntervalMs = 700;
         private const int QuiescentInactivityPollingIntervalMs = 2000;
         private const int TaskbarStatePollingIntervalMs = 200;
         private const int DesktopIconRefreshDebounceMs = 150;
-        private const int PriorityEnforcementIntervalMs = 5000;
         private const int MaxOverlayRefreshRate = 60;
         private const int OverlaySlowPollIntervalMs = 750;
         private static readonly IntPtr HWND_BROADCAST = new IntPtr(0xFFFF);
@@ -50,7 +47,6 @@ namespace OLEDSaver
         private static Timer _edgeTimer;
         private static Timer _inactivityTimer;
         private static Timer _desktopIconRefreshTimer;
-        private static Timer _priorityEnforcementTimer;
         private static Point _lastCursorPos = Point.Empty;
         private static DateTime _lastActiveTime = DateTime.Now;
         private static readonly TimeSpan InactivityThreshold = TimeSpan.FromSeconds(1);
@@ -91,13 +87,9 @@ namespace OLEDSaver
         private static Dictionary<Screen, Form> _overlays = new();
         private static Dictionary<string, MonitorSettings> _monitorSettings = new();
         private static IntPtr _hookHandle = IntPtr.Zero;
-        private static IntPtr _edgeMouseHookHandle = IntPtr.Zero;
         private static WinEventDelegate _winEventProc = WinEventProc;
-        private static LowLevelMouseProc _edgeMouseProc = EdgeMouseHookProc;
         private static List<string> _excludedWindowTitles = new();
         private static DateTime _lastTaskbarInteractionTime = DateTime.MinValue;
-        private static Point _lastEdgeHookMousePosition = Point.Empty;
-        private static bool _hasLastEdgeHookMousePosition = false;
         private static IntPtr _lastVideoDetectionWindow = IntPtr.Zero;
         private static DateTime _lastVideoDetectionTime = DateTime.MinValue;
         private static bool _lastVideoDetectionResult = false;

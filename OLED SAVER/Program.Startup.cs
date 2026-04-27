@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
-using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Timer = System.Windows.Forms.Timer;
 
@@ -17,6 +16,7 @@ namespace OLEDSaver
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            StartScreenSnapshotInvalidation();
             InitializeMonitorSettings();
             LoadSettings();
             SetupControllerActivityTracking();
@@ -25,7 +25,6 @@ namespace OLEDSaver
                 StartDesktopMonitoring();
             }
             MagicTrick();
-            StartPriorityEnforcementTimer();
             SetupTrayIcon();
             SetupOverlayWindows();
             StartInactivityTimer();
@@ -85,16 +84,6 @@ namespace OLEDSaver
             }
         }
 
-        private static void StartPriorityEnforcementTimer()
-        {
-            if (_priorityEnforcementTimer != null)
-                return;
-
-            _priorityEnforcementTimer = new Timer { Interval = PriorityEnforcementIntervalMs };
-            _priorityEnforcementTimer.Tick += (s, e) => ApplyLowPriorityProfile();
-            _priorityEnforcementTimer.Start();
-        }
-
         private static void StartEdgeTimer()
         {
             _edgeTimer = new Timer { Interval = TaskbarStatePollingIntervalMs };
@@ -123,11 +112,9 @@ namespace OLEDSaver
                     return;
                 }
 
-                SetEdgeTimerInterval(IsTaskbarEdgeHookActive()
-                    ? TaskbarStatePollingIntervalMs
-                    : (_taskbarHidden ? IdleEdgePollingIntervalMs : ActiveEdgePollingIntervalMs));
+                SetEdgeTimerInterval(_taskbarHidden ? IdleEdgePollingIntervalMs : ActiveEdgePollingIntervalMs);
 
-                if (!IsTaskbarEdgeHookActive() && GetCursorPos(out Point cursorPosition))
+                if (GetCursorPos(out Point cursorPosition))
                 {
                     HandleTaskbarEdgePointerActivity(cursorPosition);
                 }
@@ -150,14 +137,9 @@ namespace OLEDSaver
             _edgeTimer.Start();
         }
 
-        private static bool IsTaskbarEdgeHookActive()
-        {
-            return _edgeMouseHookHandle != IntPtr.Zero;
-        }
-
         private static bool IsNearTaskbarEdge(Point cursorPosition)
         {
-            return cursorPosition.Y >= Screen.PrimaryScreen.Bounds.Bottom - _activityThreshold;
+            return cursorPosition.Y >= GetPrimaryScreen().Bounds.Bottom - _activityThreshold;
         }
 
         private static void HandleTaskbarEdgePointerActivity(Point cursorPosition)
@@ -171,83 +153,6 @@ namespace OLEDSaver
             _lastTaskbarInteractionTime = DateTime.Now;
         }
 
-        private static void EnsureTaskbarEdgeHook()
-        {
-            if (IsTaskbarEdgeHookActive())
-            {
-                return;
-            }
-
-            IntPtr moduleHandle = IntPtr.Zero;
-
-            try
-            {
-                using var currentProcess = Process.GetCurrentProcess();
-                string moduleName = currentProcess.MainModule?.ModuleName;
-                if (!string.IsNullOrEmpty(moduleName))
-                {
-                    moduleHandle = GetModuleHandle(moduleName);
-                }
-            }
-            catch
-            {
-                moduleHandle = IntPtr.Zero;
-            }
-
-            try
-            {
-                _edgeMouseHookHandle = SetWindowsHookEx(WH_MOUSE_LL, _edgeMouseProc, moduleHandle, 0);
-                if (_edgeMouseHookHandle != IntPtr.Zero)
-                {
-                    _hasLastEdgeHookMousePosition = false;
-                }
-            }
-            catch
-            {
-                _edgeMouseHookHandle = IntPtr.Zero;
-            }
-        }
-
-        private static void StopTaskbarEdgeHook()
-        {
-            if (!IsTaskbarEdgeHookActive())
-            {
-                return;
-            }
-
-            try
-            {
-                UnhookWindowsHookEx(_edgeMouseHookHandle);
-            }
-            catch
-            {
-            }
-            finally
-            {
-                _edgeMouseHookHandle = IntPtr.Zero;
-                _hasLastEdgeHookMousePosition = false;
-                _lastEdgeHookMousePosition = Point.Empty;
-            }
-        }
-
-        private static IntPtr EdgeMouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
-        {
-            if (nCode >= 0 && wParam == (IntPtr)WM_MOUSEMOVE && lParam != IntPtr.Zero)
-            {
-                MSLLHOOKSTRUCT hookData = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-                Point cursorPosition = new Point(hookData.pt.x, hookData.pt.y);
-
-                if (!_hasLastEdgeHookMousePosition || cursorPosition != _lastEdgeHookMousePosition)
-                {
-                    _lastEdgeHookMousePosition = cursorPosition;
-                    _hasLastEdgeHookMousePosition = true;
-                    HandleTaskbarEdgePointerActivity(cursorPosition);
-                }
-            }
-
-            return CallNextHookEx(_edgeMouseHookHandle, nCode, wParam, lParam);
-        }
-
         private static void SetEdgeTimerInterval(int interval)
         {
             if (_edgeTimer != null && _edgeTimer.Interval != interval)
@@ -258,10 +163,14 @@ namespace OLEDSaver
 
         private static void InitializeMonitorSettings()
         {
-            foreach (var screen in Screen.AllScreens)
+            var screens = GetScreens();
+            var primaryScreen = GetPrimaryScreen();
+
+            for (int i = 0; i < screens.Length; i++)
             {
-                var displayName = $"Monitor {Array.IndexOf(Screen.AllScreens, screen) + 1}";
-                if (screen == Screen.PrimaryScreen)
+                var screen = screens[i];
+                var displayName = $"Monitor {i + 1}";
+                if (screen == primaryScreen)
                     displayName += " (Primary)";
 
                 _monitorSettings[screen.DeviceName] = new MonitorSettings

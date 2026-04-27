@@ -12,6 +12,8 @@ namespace OLEDSaver
     {
         private const int VK_LWIN = 0x5B;
         private const int VK_RWIN = 0x5C;
+        private static readonly ExpiringValueCache<uint, string> _processNameCache =
+            new ExpiringValueCache<uint, string>(TimeSpan.FromSeconds(5), () => DateTime.UtcNow);
 
         private static bool IsWindowsKeyPressed()
         {
@@ -24,6 +26,29 @@ namespace OLEDSaver
             _lastVideoDetectionWindow = IntPtr.Zero;
             _lastVideoDetectionTime = DateTime.MinValue;
             _lastVideoDetectionResult = false;
+        }
+
+        private static string GetProcessName(uint processId)
+        {
+            if (processId == 0)
+            {
+                return string.Empty;
+            }
+
+            return _processNameCache.GetOrAdd(processId, () =>
+            {
+                try
+                {
+                    using (var process = Process.GetProcessById((int)processId))
+                    {
+                        return process.ProcessName;
+                    }
+                }
+                catch
+                {
+                    return string.Empty;
+                }
+            });
         }
 
         private static bool ShouldEvaluateVideoState(double idleSeconds)
@@ -126,19 +151,9 @@ namespace OLEDSaver
                 string ttl = title.ToString();
                 string processName = string.Empty;
 
-                try
-                {
-                    uint processId;
-                    GetWindowThreadProcessId(hwnd, out processId);
-                    using (var process = Process.GetProcessById((int)processId))
-                    {
-                        processName = process.ProcessName;
-                    }
-                }
-                catch
-                {
-                    processName = string.Empty;
-                }
+                uint processId;
+                GetWindowThreadProcessId(hwnd, out processId);
+                processName = GetProcessName(processId);
 
                 if (_excludedWindowTitles.Count > 0)
                 {

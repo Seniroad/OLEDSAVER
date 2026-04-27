@@ -368,9 +368,14 @@ namespace OLEDSaver
                 if (form.ShowDialog() == DialogResult.OK)
                 {
                     if (int.TryParse(textBox.Text, out int timeout) && timeout > 0)
+                    {
                         _displayOffTimeoutSeconds = timeout;
+                        SaveSettings();
+                    }
                     else
+                    {
                         MessageBox.Show("Enter a valid timeout (positive integer).", "Invalid Input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
                 }
             }
         }

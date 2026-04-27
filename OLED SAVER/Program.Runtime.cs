@@ -22,10 +22,11 @@ namespace OLEDSaver
     static partial class Program
     {
         private static readonly Dictionary<Screen, OverlayForm> _blackOverlays = new Dictionary<Screen, OverlayForm>();
+        private static readonly Dictionary<OverlayForm, OverlayRegionState> _overlayRegionStates = new Dictionary<OverlayForm, OverlayRegionState>();
 
         private static void SetupOverlayWindows()
         {
-            foreach (var screen in Screen.AllScreens)
+            foreach (var screen in GetScreens())
             {
                 var overlay = new OverlayForm();
                 overlay.BackColor = Color.Black;
@@ -87,24 +88,11 @@ namespace OLEDSaver
 
         private static void UpdateBackgroundTimerProfile()
         {
-            if (_taskbarHidingEnabled)
-            {
-                EnsureTaskbarEdgeHook();
-            }
-            else
-            {
-                StopTaskbarEdgeHook();
-            }
-
             if (_edgeTimer != null)
             {
                 if (!_taskbarHidingEnabled)
                 {
                     SetEdgeTimerInterval(DisabledEdgePollingIntervalMs);
-                }
-                else if (IsTaskbarEdgeHookActive())
-                {
-                    SetEdgeTimerInterval(TaskbarStatePollingIntervalMs);
                 }
                 else
                 {
@@ -133,9 +121,10 @@ namespace OLEDSaver
 
         private static void CheckInactivity()
         {
-            UpdateBackgroundTimerProfile();
-
             double idleSeconds = GetIdleTimeSeconds();
+            bool desktopIconsHidingEnabled = _desktopIconsHidingEnabled;
+            bool drawBlackOverlayEnabled = _drawBlackOverlayEnabled;
+            bool screenOffEnabled = _screenOffEnabled;
             bool anyMonitorOverlayEnabled = AnyMonitorOverlayEnabled();
 
             if (_screenOff && idleSeconds < 1.0)
@@ -177,7 +166,7 @@ namespace OLEDSaver
                 UpdateBlackOverlays();
             }
 
-            if (_desktopIconsHidingEnabled)
+            if (desktopIconsHidingEnabled)
             {
                 if (idleSeconds >= _desktopIconsTimeoutSeconds)
                 {
@@ -189,7 +178,7 @@ namespace OLEDSaver
                 }
             }
 
-            if (_drawBlackOverlayEnabled && !_isVideoPlaying)
+            if (drawBlackOverlayEnabled && !_isVideoPlaying)
             {
                 if (idleSeconds >= _drawBlackOverlayEnabledTimeoutSeconds)
                 {
@@ -219,12 +208,14 @@ namespace OLEDSaver
                 HideBlackOverlays();
             }
 
-            if (_screenOffEnabled)
+            if (InactivityDecisions.ShouldTurnOffDisplay(
+                screenOffEnabled,
+                _screenOff,
+                idleSeconds,
+                _displayOffTimeoutSeconds,
+                _isVideoPlaying))
             {
-                if (idleSeconds >= _displayOffTimeoutSeconds && !_screenOff)
-                {
-                    TurnOffDisplay();
-                }
+                TurnOffDisplay();
             }
         }
 
@@ -270,9 +261,6 @@ namespace OLEDSaver
                 newOverlayRect = _targetActiveWindowRect;
             }
 
-            if (newOverlayRect == _lastRenderedOverlayRect)
-                return;
-
             _lastRenderedOverlayRect = newOverlayRect;
             _currentActiveWindowRect = newOverlayRect;
 
@@ -288,22 +276,30 @@ namespace OLEDSaver
                     newOverlayRect.Width,
                     newOverlayRect.Height);
 
+                var nextState = OverlayRegionState.Create(relativeRect, overlay.Size, _overlayRoundedCorners);
+                if (_overlayRegionStates.TryGetValue(overlay, out OverlayRegionState previousState) &&
+                    previousState.Equals(nextState))
+                {
+                    continue;
+                }
+
                 Region nextRegion = new Region(new Rectangle(0, 0, overlay.Width, overlay.Height));
 
-                if (_overlayRoundedCorners)
+                if (!nextState.CutoutRect.IsEmpty && nextState.RoundedCorners)
                 {
-                    using Region roundedWindowRegion = CreateRoundedRegion(relativeRect, 6);
+                    using Region roundedWindowRegion = CreateRoundedRegion(nextState.CutoutRect, 6);
                     nextRegion.Exclude(roundedWindowRegion);
                 }
-                else
+                else if (!nextState.CutoutRect.IsEmpty)
                 {
-                    using Region rectangularWindowRegion = new Region(relativeRect);
+                    using Region rectangularWindowRegion = new Region(nextState.CutoutRect);
                     nextRegion.Exclude(rectangularWindowRegion);
                 }
 
                 Region previousRegion = overlay.Region;
                 overlay.Region = nextRegion;
                 previousRegion?.Dispose();
+                _overlayRegionStates[overlay] = nextState;
             }
         }
 
@@ -382,7 +378,7 @@ namespace OLEDSaver
             _overlayUpdateCts = new CancellationTokenSource();
             var token = _overlayUpdateCts.Token;
 
-            int refreshRate = Math.Max(1, Math.Min(MaxOverlayRefreshRate, GetScreenRefreshRate(Screen.PrimaryScreen)));
+            int refreshRate = Math.Max(1, Math.Min(MaxOverlayRefreshRate, GetScreenRefreshRate(GetPrimaryScreen())));
             int fastDelay = Math.Max(16, 1000 / refreshRate);
             int slowDelay = OverlaySlowPollIntervalMs;
 
@@ -531,7 +527,7 @@ namespace OLEDSaver
 
             if (!GetWindowRect(_windowThatTriggeredOverlay, out RECT activeWindowRect)) return;
 
-            foreach (var screen in Screen.AllScreens)
+            foreach (var screen in GetScreens())
             {
                 Rectangle screenBounds = screen.Bounds;
 
@@ -659,8 +655,11 @@ namespace OLEDSaver
                     overlay.Hide();
                     overlay.Region?.Dispose();
                     overlay.Region = null;
+                    _overlayRegionStates.Remove(overlay);
                 }
             }
+
+            _lastRenderedOverlayRect = Rectangle.Empty;
         }
 
         private static double GetIdleTimeSeconds()
@@ -699,11 +698,6 @@ namespace OLEDSaver
         {
             if (_screenOff) return;
 
-            if (IsVideoPlaying())
-            {
-                return;
-            }
-
             SendMessage(HWND_BROADCAST, WM_SYSCOMMAND, (IntPtr)SC_MONITORPOWER, (IntPtr)2);
             _screenOff = true;
         }
@@ -719,14 +713,11 @@ namespace OLEDSaver
         {
             SaveSettings();
             StopDesktopMonitoring();
-            StopTaskbarEdgeHook();
+            StopScreenSnapshotInvalidation();
             StopControllerActivityTracking();
             _edgeTimer?.Stop();
             _edgeTimer?.Dispose();
             _edgeTimer = null;
-            _priorityEnforcementTimer?.Stop();
-            _priorityEnforcementTimer?.Dispose();
-            _priorityEnforcementTimer = null;
 
             if (_desktopIconsHidden)
                 ShowDesktopIconsIfNeeded();
@@ -745,6 +736,8 @@ namespace OLEDSaver
 
             foreach (var overlay in _blackOverlays.Values)
                 overlay?.Dispose();
+
+            _overlayRegionStates.Clear();
 
             Application.Exit();
         }
